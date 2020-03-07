@@ -1,0 +1,93 @@
+#version 450 core
+
+const float pi = 3.1415926f;
+const float g = 9.8f;
+
+layout (local_size_x = 32, local_size_y = 32) in;
+
+layout (binding = 0) coherent buffer block0
+{
+    vec2 ampl[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 1) coherent buffer block1
+{
+    vec2 normalX[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 2) coherent buffer block2
+{
+    vec2 normalZ[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 3) coherent buffer block3
+{
+    vec2 dx[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 4) coherent buffer block4
+{
+    vec2 dz[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 5) coherent buffer block5
+{
+    vec2 h_tlide_0[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+layout (binding = 6) coherent buffer block6
+{
+    vec2 h_tlide_0_conj[gl_WorkGroupSize.x*gl_WorkGroupSize.y];
+};
+
+uniform int N;
+uniform int M;
+uniform float Lx;
+uniform float Lz;
+uniform float t;
+
+int pos2idx(int n, int m)
+{
+    return m * N + n;
+}
+
+vec2 getK(int n, int m)
+{
+    return vec2(2.f * pi * (float(n) - float(N) / 2.f) / Lx,
+            2.f * pi * (float(m) - float(M) / 2.f) / Lz);
+}
+
+float dispersion(float k)
+{
+    return sqrt(g * k);
+}
+
+vec2 hTlide(int n, int m, float t)
+{
+    float k_len = length(getK(n, m));
+    float omega = dispersion(k_len);
+    vec2 c = vec2(cos(omega*t), sin(omega * t));
+
+    vec2 z0 = h_tlide_0[pos2idx(n,m)];
+    vec2 z1 = h_tlide_0_conj[pos2idx(n,m)];
+    vec2 c0 = c;
+    vec2 c1 = vec2(c.x, -c.y);
+    vec2 zz0 = vec2(z0.x * c0.x - z0.y*c0.y, z0.y*c0.x+z0.x*c0.y);
+    vec2 zz1 = vec2(z1.x * c1.x - z1.y*c1.y, z1.y*c1.x+z1.x*c1.y);
+    return vec2(zz0 + zz1);
+}
+
+void main(void)
+{
+    int n = int(gl_LocalInvocationID.x);
+    int m = int(gl_LocalInvocationID.y);
+    vec2 k = getK(n, m);
+    float k_len = length(k);
+    vec2 k_hat = k_len == 0.f ? k : k / k_len;
+    vec2 h_tlide = hTlide(n, m, t);
+    ampl[pos2idx(n,m)] = h_tlide;
+    normalX[pos2idx(n,m)] = vec2(-k.x*h_tlide.y, k.x*h_tlide.x);
+    normalZ[pos2idx(n,m)] = vec2(-k.y*h_tlide.y, k.y*h_tlide.x);
+    dx[pos2idx(n,m)] = vec2(k_hat.x*h_tlide.y, -k_hat.x*h_tlide.x);
+    dz[pos2idx(n,m)] = vec2(k_hat.y*h_tlide.y, -k_hat.y*h_tlide.x);
+}

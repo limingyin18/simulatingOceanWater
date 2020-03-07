@@ -1,0 +1,22 @@
+#version 450 core
+
+layout (local_size_x = 32, local_size_y = 32) in;
+
+layout (binding = 0) coherent buffer block0
+{
+    vec2 x[];
+};
+
+uniform int N;
+
+void main(void)
+{
+    int r = int(gl_LocalInvocationID.x);
+    int c = int(gl_LocalInvocationID.y);
+
+    int index = r*N + c;
+    float sign = bool((r + c) & 1) ? -1.0f : 1.0f;
+
+    x[index].x = x[index].x * sign;
+    x[index].y = x[index].y * sign;
+}

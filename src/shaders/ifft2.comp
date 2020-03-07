@@ -1,0 +1,86 @@
+#version 450 core
+
+const float pi = 3.1415926f;
+
+layout (local_size_x = 32) in;
+
+layout (binding = 0) coherent buffer block0
+{
+    vec2 x[];
+};
+
+uniform int N;
+
+void fft(int step, int offset)
+{
+    // reverse order, rader algorithm
+	for(int i = 0, j = 0; i < N - 1; ++i)        
+	{
+		if(i < j)
+		{
+            vec2 temp = x[offset+i*step];
+            x[offset + i*step] = x[offset + j*step];
+            x[offset + j*step] = temp;
+		}
+
+        // next j
+        int k = N/2;
+		while( k <= j)                 // bit = 1   
+		{           
+			j = j - k;                 // set bit to 0
+			k = k / 2;                 // next bit
+		}
+		j = j + k;                     //set bit 0 to 1
+	}
+
+    // butterfly algorithm
+    int stages = int(log2(N));
+    for(int s = 1; s <= stages; s++)                    // stage
+    {                                        
+        int d = int(pow(2, s-1));                            // distance between points in a butterfly
+        vec2 w0 = vec2(cos(pi/d), -sin(pi/d));
+        vec2 w = vec2(1.0f, 0.0f); // weight
+        for(int k = 0; k < d; k++)                      // butterfly kind
+        {
+            for(int i = k; i < N; i += d*2)             // butterfly 
+            {
+                int j = i + d;                          // i, j index of butterfly inputs
+                vec2 temp = vec2(x[offset + j*step].x * w.x - x[offset + j*step].y * w.y,
+                    x[offset + j*step].x *w.y + x[offset + j*step].y * w.x);
+                x[offset + j*step] = x[offset + i*step] - temp;
+                x[offset + i*step] = x[offset + i*step] + temp;
+            }
+            w = vec2(w.x*w0.x - w.y * w0.y, w.x * w0.y + w.y *w0.x); 
+        }
+    }
+}
+
+void main(void)
+{
+    int r = int(gl_LocalInvocationID.x);
+
+    // conj
+    for(int i = 0; i < N; ++i)
+    {
+        x[r*N+i].y = - x[r*N+i].y;
+    }
+
+    // rol fft
+    int step = 1;
+    int offset = r*N;
+    fft(step, offset);
+
+    // col fft
+    step = N;
+    offset = r;
+    fft(step, offset);
+
+    barrier();
+
+    // conj
+    for(int i = 0; i < N; ++i)
+    {
+        x[offset+i*N].x = x[offset+i*N].x/(N*N);
+        x[offset+i*N].y = - x[offset+i*N].y/(N*N);
+    }
+}
